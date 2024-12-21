@@ -1,6 +1,6 @@
 import re
 
-max_percentage = 99.99
+max_percentage = 99
 min_percentage = 55
 
 

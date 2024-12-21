@@ -1,5 +1,6 @@
 import openai
-import os
+import requests
+from bs4 import BeautifulSoup
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.future import select
 from sqlalchemy import or_, case
@@ -15,7 +16,13 @@ from utils.City_Data.get_city_data import get_city_data
 from Database.get_news_db import get_news_db, News
 from Database.get_verified_db import get_verified_db
 from Database.get_city_list_db import get_city_list_db, CityMetricsQuery
-
+from utils.constants import MAIN_URL
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Create the router
 api_router = APIRouter()
@@ -32,7 +39,6 @@ async def get_items_list(
         raise HTTPException(status_code=400, detail="Search term is required.")
 
     search_query = f"%{q.strip()}%"
-
 
     query = db.query(CityMetricsQuery).filter(
         or_(
@@ -189,3 +195,69 @@ def chatbot(request: ChatRequest):
 
     response = chat_with_gpt(request.messages, request.city)
     return {"response": response}
+
+
+# Define your request model
+class ContactUsRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    comments: str
+
+
+api_router = APIRouter()
+
+
+@api_router.post("/contact-us")
+def contact_us(request: ContactUsRequest):
+    # Replace MAIN_URL with the actual base URL
+    URL = f"{MAIN_URL}/contact-gay-real-estate.html"
+
+    try:
+        # Set up Selenium for headless operation
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        # Ensure the WebDriver is correctly installed and in PATH
+        driver = webdriver.Chrome(options=options)
+
+        # Navigate to the page
+        driver.get(URL)
+
+        # Fill the form fields
+        try:
+            # Locate and fill the input fields
+            driver.find_element(By.ID, "clientName").send_keys(request.name)
+            driver.find_element(By.ID, "clientEmail").send_keys(request.email)
+            driver.find_element(By.ID, "clientPhone").send_keys(request.phone)
+            driver.find_element(By.ID, "clientComments").send_keys(
+                request.comments)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Error filling form: {str(e)}")
+
+        # Check and click the "Send" button
+        try:
+            submit_button = driver.find_element(By.ID, "contactUsSubmit")
+            ActionChains(driver).move_to_element(
+                submit_button).click().perform()
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Error clicking submit button: {str(e)}")
+
+        # Dynamically wait for the new page to load
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.ID, "successMsg"))
+            )
+            success_msg = "Thank You! We have received your request and one of our staff members will reply shortly."
+            return {"success": True, "message": success_msg}
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail="Success message not found after submission.")
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred: {str(e)}")
+    finally:
+        driver.quit()
